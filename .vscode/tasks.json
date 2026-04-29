@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Frontend Dev Server",
+      "type": "shell",
+      "command": "cd web && npm run dev",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Compile Contracts",
+      "type": "shell",
+      "command": "cd contracts && npx hardhat compile",
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": "$hardhat"
+    },
+    {
+      "label": "Run All",
+      "dependsOn": ["Compile Contracts", "Run Frontend Dev Server"],
+      "group": "build"
+    }
+  ]
+}

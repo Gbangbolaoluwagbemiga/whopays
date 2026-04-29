@@ -1,0 +1,17 @@
+{
+  "name": "whopays-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix web",
+    "install": "npm install --prefix web --legacy-peer-deps",
+    "dev": "npm run dev --prefix web",
+    "start": "npm start --prefix web",
+    "lint": "npm run lint --prefix web"
+  },
+  "dependencies": {
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  }
+}

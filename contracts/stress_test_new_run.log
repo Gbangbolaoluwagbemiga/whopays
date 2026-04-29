@@ -1,0 +1,23 @@
+WARNING: You are currently using Node.js v25.6.0, which is not supported by Hardhat. This can lead to unexpected behavior. See https://hardhat.org/nodejs-versions
+
+
+Compiled 1 Solidity file successfully (evm target: paris).
+Stress test host: 0x3Be7fbBDbC73Fc4731D60EF09c4BA1A94DC58E41
+Generated secondary wallet: 0xD30ec523ea30d89262fd30314Db2955E9f513940
+Funding secondary wallet...
+Wallet funded.
+Starting stress test for 1000 loops...
+....Completed 5/1000 successful full cycles
+....Completed 10/1000 successful full cycles
+....Completed 15/1000 successful full cycles
+....Completed 20/1000 successful full cycles
+...
+Error on loop 24: read ECONNRESET...
+.Completed 25/1000 successful full cycles
+...
+Error on loop 30: Connect Timeout Error...
+.Completed 30/1000 successful full cycles
+....Completed 35/1000 successful full cycles
+....Completed 40/1000 successful full cycles
+....Completed 45/1000 successful full cycles
+..

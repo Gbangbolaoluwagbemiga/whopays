@@ -1,0 +1,28 @@
+WARNING: You are currently using Node.js v25.6.0, which is not supported by Hardhat. This can lead to unexpected behavior. See https://hardhat.org/nodejs-versions
+
+
+Stress test host: 0x3Be7fbBDbC73Fc4731D60EF09c4BA1A94DC58E41
+Generated secondary wallet: 0x2F65f16bec0A5DA2eFef991Da962e20C4C0DaD7B
+Funding secondary wallet...
+Wallet funded.
+Starting stress test for 1000 loops...
+....Completed 5/1000 successful full cycles
+....
+Error on loop 10: execution reverted: Session does not exist...
+
+Error on loop 11: nonce too low: next nonce 1267, tx nonce 1266...
+Completed 10/1000 successful full cycles
+....Completed 15/1000 successful full cycles
+....Completed 20/1000 successful full cycles
+....Completed 25/1000 successful full cycles
+
+Error on loop 28: Headers Timeout Error...
+
+Error on loop 29: Connect Timeout Error...
+Error: getaddrinfo ENOTFOUND forno.celo.org
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:121:26) {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'forno.celo.org'
+}

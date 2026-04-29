@@ -1,0 +1,216 @@
+import { useWriteContract, useReadContract } from "wagmi";
+import { parseEther } from "viem";
+
+// Deployed contract address on Celo mainnet
+export const CONTRACT_ADDRESS = "0x5fA80497E70506E3CB8a2e32b838782aF31E005A";
+export const BADGE_CONTRACT_ADDRESS =
+  "0x956D4eeF22377d83D5cc31E0951a4591F08aECEC";
+
+export const BADGE_CONTRACT_ABI = [
+  {
+    inputs: [{ name: "user", type: "address" }],
+    name: "getBadge",
+    outputs: [
+      {
+        components: [
+          { name: "totalPaid", type: "uint256" },
+          { name: "sessionsPaid", type: "uint256" },
+          { name: "lastPaidAt", type: "uint256" },
+          { name: "rarity", type: "string" },
+        ],
+        name: "",
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+export const CONTRACT_ABI = [
+  {
+    inputs: [
+      { name: "_amount", type: "uint256" },
+      { name: "_merchant", type: "address" },
+    ],
+    name: "createLobby",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "_sessionId", type: "uint256" }],
+    name: "joinSession",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "_sessionId", type: "uint256" }],
+    name: "lockAndSelectPayer",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "_sessionId", type: "uint256" }],
+    name: "completePayment",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "_sessionId", type: "uint256" },
+      { name: "_token", type: "address" },
+    ],
+    name: "completePaymentWithToken",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "_sessionId", type: "uint256" }],
+    name: "getSessionParticipants",
+    outputs: [{ name: "", type: "address[]" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "", type: "uint256" }],
+    name: "sessions",
+    outputs: [
+      { name: "amount", type: "uint256" },
+      { name: "merchant", type: "address" },
+      { name: "selectedPayer", type: "address" },
+      { name: "completed", type: "bool" },
+      { name: "isLocked", type: "bool" },
+      { name: "createdAt", type: "uint256" },
+      { name: "requestId", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "sessionCount",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+export function usePayeerContract() {
+  const {
+    writeContractAsync: writeCreateLobby,
+    isPending: createLobbyPending,
+  } = useWriteContract();
+  const {
+    writeContractAsync: writeJoinSession,
+    isPending: joinSessionPending,
+  } = useWriteContract();
+  const {
+    writeContractAsync: writeLockAndSelectPayer,
+    isPending: lockAndSelectPayerPending,
+  } = useWriteContract();
+  const {
+    writeContractAsync: writeCompletePayment,
+    isPending: completePaymentPending,
+  } = useWriteContract();
+  const {
+    writeContractAsync: writeCompletePaymentWithToken,
+    isPending: completePaymentWithTokenPending,
+  } = useWriteContract();
+
+  const {
+    data: sessionCount,
+    isLoading: sessionCountLoading,
+    refetch: refetchSessionCount,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    abi: CONTRACT_ABI,
+    functionName: "sessionCount",
+  });
+
+  const createLobby = async (amount: string, merchant: string) => {
+    return writeCreateLobby({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      abi: CONTRACT_ABI,
+      functionName: "createLobby",
+      args: [parseEther(amount), merchant as `0x${string}`],
+    });
+  };
+
+  const joinSession = async (sessionId: number) => {
+    try {
+      const tx = await writeJoinSession({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: CONTRACT_ABI,
+        functionName: "joinSession",
+        args: [BigInt(sessionId)],
+      });
+      return tx;
+    } catch (e) {
+      console.error("Contract call failed at Wagmi layer:", e);
+      throw e;
+    }
+  };
+
+  const lockAndSelectPayer = async (sessionId: number) => {
+    try {
+      const tx = await writeLockAndSelectPayer({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: CONTRACT_ABI,
+        functionName: "lockAndSelectPayer",
+        args: [BigInt(sessionId)],
+      });
+      return tx;
+    } catch (e) {
+      console.error(
+        "Contract call failed at Wagmi layer (lockAndSelectPayer):",
+        e,
+      );
+      throw e;
+    }
+  };
+
+  const completePayment = async (sessionId: number, amount: string) => {
+    return writeCompletePayment({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      abi: CONTRACT_ABI,
+      functionName: "completePayment",
+      args: [BigInt(sessionId)],
+      value: parseEther(amount),
+    });
+  };
+
+  const completePaymentWithToken = async (
+    sessionId: number,
+    token: string,
+  ) => {
+    return writeCompletePaymentWithToken({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      abi: CONTRACT_ABI,
+      functionName: "completePaymentWithToken",
+      args: [BigInt(sessionId), token as `0x${string}`],
+    });
+  };
+
+  return {
+    createLobby,
+    joinSession,
+    lockAndSelectPayer,
+    completePayment,
+    completePaymentWithToken,
+    sessionCount,
+    sessionCountLoading,
+    refetchSessionCount,
+    createLobbyPending,
+    joinSessionPending,
+    lockAndSelectPayerPending,
+    completePaymentPending,
+    completePaymentWithTokenPending,
+    CONTRACT_ADDRESS,
+    CONTRACT_ABI,
+  };
+}
