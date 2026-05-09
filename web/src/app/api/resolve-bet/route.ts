@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Lazy init for build safety
+const getGroq = () => {
+  if (!process.env.GROQ_API_KEY) return null;
+  return new Groq({ apiKey: process.env.GROQ_API_KEY });
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,6 +45,11 @@ Respond in this exact JSON format:
   "explanation": "Friendly expert commentary (2-3 sentences)",
   "canDeclareWinner": true/false
 }`;
+
+    const groq = getGroq();
+    if (!groq) {
+      return NextResponse.json({ error: "Arbiter service unavailable." }, { status: 500 });
+    }
 
     const completion = await groq.chat.completions.create({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",

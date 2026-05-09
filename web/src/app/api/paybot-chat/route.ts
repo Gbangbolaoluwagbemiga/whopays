@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Lazy init for build safety
+const getGroq = () => {
+  if (!process.env.GROQ_API_KEY) return null;
+  return new Groq({ apiKey: process.env.GROQ_API_KEY });
+};
 
 const SYSTEM_PROMPT = `You are PayBot, WhoPays's friendly AI assistant for group payment management on the Celo blockchain. You are helpful, witty, and concise. You help friends:
 1. Split bills fairly at restaurants and events
@@ -44,6 +48,11 @@ export async function POST(req: NextRequest) {
 
     // Add current message
     messages.push({ role: "user", content: message });
+
+    const groq = getGroq();
+    if (!groq) {
+      return NextResponse.json({ error: "AI Service temporarily unconfigured." }, { status: 500 });
+    }
 
     const completion = await groq.chat.completions.create({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",

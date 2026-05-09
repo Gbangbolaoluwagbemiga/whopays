@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Lazy init for build safety
+const getGroq = () => {
+  if (!process.env.GROQ_API_KEY) return null;
+  return new Groq({ apiKey: process.env.GROQ_API_KEY });
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,6 +20,11 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const base64 = Buffer.from(bytes).toString("base64");
     const mimeType = file.type || "image/jpeg";
+
+    const groq = getGroq();
+    if (!groq) {
+      return NextResponse.json({ error: "Scanner service unavailable." }, { status: 500 });
+    }
 
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
