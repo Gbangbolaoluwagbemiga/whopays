@@ -459,7 +459,8 @@ export default function BetsPage() {
                                     {hasPaid && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                                 </div>
                             );
-                        })}
+                        })
+                    )}
                     </div>
                 </div>
             )}
