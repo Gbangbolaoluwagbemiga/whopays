@@ -14,32 +14,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing bet context" }, { status: 400 });
     }
 
-    const prompt = `You are an elite AI referee for WhoPays, a decentralized escrow platform.
-Your job is to resolve a bet based on real-world facts and the participants' claims.
+    const prompt = `You are a definitive AI Arbiter for WhoPays. Resolve this escrow challenge IMMEDIATELY based on verified facts.
 
-BET CONTEXT:
-- Title: "${title}"
-- Description: "${description || "No description"}"
-- Type: ${isUniversal ? "UNIVERSAL (Public event - you MUST verify online)" : "LOCAL (Personal event)"}
+BET: "${title}"
+DESCRIPTION: "${description || "No description provided"}"
 
-PARTICIPANTS & THEIR CLAIMS:
-${parties.map((p: any) => `- Address: ${p.address}\n  Claim: "${p.claim}"`).join("\n")}
+PARTICIPANTS & CLAIMS:
+${parties.map((p: any) => `- ${p.address}: "${p.claim}"`).join("\n")}
 
-SECURITY PROTOCOL:
-1. Browse your knowledge base for the actual result of the event described in the title/description.
-2. Compare the real-world result against each participant's "Claim".
-3. Identify which participant's claim matches the outcome.
-4. If it is a UNIVERSAL bet and the event has occurred, set "resolved": true.
-5. If the event has NOT occurred yet, set "resolved": false.
-6. The "outcome" field MUST be the Celo Wallet Address of the winner.
+INSTRUCTIONS:
+1. You are a UNIVERSAL JUDGE. Search your internal world knowledge for the definitive outcome of the event described.
+2. If the event occurred, you MUST identify the winner by their wallet address.
+3. Your "explanation" MUST include the specific score or result (e.g., "Bayern Munich won 1-0 in the UCL final").
+4. If a participant's claim matches the real-world outcome, set that address as the "outcome".
+5. Be decisive. If you find the result, resolve it.
 
-Respond in this exact JSON format:
+REQUIRED JSON FORMAT:
 {
-  "resolved": true/false,
-  "outcome": "0x... (Winner's Celo Address)",
-  "confidence": "high/medium/low",
-  "explanation": "Briefly state the result found online and why this address won (2 sentences).",
-  "canDeclareWinner": true/false
+  "resolved": true,
+  "outcome": "0x... (THE WALLET ADDRESS OF THE WINNER)",
+  "confidence": "high",
+  "explanation": "State the exact result found (e.g. 'Bayern won 2-1') and name the winning address.",
+  "canDeclareWinner": true
 }`;
 
     const groq = getGroq();
@@ -49,12 +45,14 @@ Respond in this exact JSON format:
 
     const completion = await groq.chat.completions.create({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "system", content: "You are a factual, decisive AI escrow arbiter. Always provide a clear explanation and identify the winner's wallet address." }, { role: "user", content: prompt }],
       temperature: 0.1,
-      max_tokens: 600,
+      max_tokens: 800,
     });
 
     const rawText = completion.choices[0]?.message?.content?.trim() || "";
+    console.log("[AI Judge Raw Output]:", rawText);
+    
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
@@ -62,7 +60,7 @@ Respond in this exact JSON format:
         resolved: false,
         outcome: null,
         confidence: "low",
-        explanation: "AI could not reach a definitive verdict. The event may not have happened yet.",
+        explanation: "The AI was unable to find a definitive result. The event might still be in progress.",
         canDeclareWinner: false,
       });
     }

@@ -61,7 +61,7 @@ export default function BetsPage() {
   const [selectedToken, setSelectedToken] = useState(SUPPORTED_TOKENS[0]);
   const [betType, setBetType] = useState<"local" | "universal">("local");
 
-  const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
+  const { writeContract, data: hash, isPending: isTxPending, error: writeError } = useWriteContract();
   const { data: receipt, isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash });
 
   // 1. Listen for successful creation via receipt logs (More reliable than passive watch)
@@ -135,6 +135,15 @@ export default function BetsPage() {
     query: { enabled: !!contractParties && !!activeBetId }
   } as any);
 
+  const { data: arbiterAddress } = useReadContract({
+    address: ESCROW_ADDRESS as `0x${string}`,
+    abi: ESCROW_ABI,
+    functionName: "arbiter",
+  });
+
+  const isArbiter = address?.toLowerCase() === (arbiterAddress as string)?.toLowerCase();
+  const isWinner = address?.toLowerCase() === verdict?.outcome?.toLowerCase();
+
   const { data: partyClaims } = useReadContracts({
     contracts: (contractParties || []).map((pAddr: any) => ({
       address: ESCROW_ADDRESS as `0x${string}`,
@@ -206,13 +215,44 @@ export default function BetsPage() {
 
   const handleResolve = async () => {
     if (!activeBetId || !verdict?.outcome) return;
+    
+    toast.loading("Requesting Wallet Approval...", { id: "payout" });
+    
+    try {
+        const functionName = isArbiter ? "arbiterResolve" : "resolveBet";
+        console.log(`[Escrow] Attempting ${functionName} for bet ${activeBetId}`);
+        
+        writeContract({
+          address: ESCROW_ADDRESS as `0x${string}`,
+          abi: ESCROW_ABI,
+          functionName: functionName as any,
+          args: [activeBetId as `0x${string}`, verdict.outcome as `0x${string}`],
+        });
+    } catch (e: any) {
+        console.error("[Payout Error]", e);
+        toast.error(`Payout failed: ${e.message}`, { id: "payout" });
+    }
+  };
+
+  const handleVote = async (candidate: string) => {
+    if (!activeBetId) return;
+    toast.loading("Casting your vote...", { id: "vote" });
     writeContract({
       address: ESCROW_ADDRESS as `0x${string}`,
       abi: ESCROW_ABI,
-      functionName: "resolveBet",
-      args: [activeBetId as `0x${string}`, verdict.outcome as `0x${string}`],
+      functionName: "confirmWinner",
+      args: [activeBetId as `0x${string}`, candidate as `0x${string}`],
     });
   };
+
+  useEffect(() => {
+    if (hash) {
+      toast.success("Transaction Broadcasted! Check CeloScan.", { id: "payout" });
+    }
+    if (writeError) {
+      toast.error(`Transaction Reverted: ${writeError.message}`, { id: "payout" });
+    }
+  }, [hash, writeError]);
 
   const startAiJudging = async () => {
     if (!activeBetId || !betInfo || !publicClient) return;
@@ -247,6 +287,8 @@ export default function BetsPage() {
       setIsResolving(false);
     }
   };
+
+  const allDeposited = depositStatuses && depositStatuses.length > 0 && depositStatuses.every((d: any) => d.result === true);
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-yellow-500/30 selection:text-yellow-200 font-sans">
@@ -458,10 +500,10 @@ export default function BetsPage() {
                                             <p className="text-xs font-bold text-white/90">{pAddr.slice(0, 6)}...{pAddr.slice(-4)}</p>
                                             <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1">
                                                 {isMe ? "You" : "Party"} • {hasPaid ? "Staked" : "Waiting"}
-                                                {partyClaims?.[i]?.result && (
+                                                {Boolean((partyClaims as any)?.[i]?.result) && (
                                                     <>
                                                         <span className="opacity-30">•</span>
-                                                        <span className="text-yellow-500/80">Prediction: {partyClaims[i].result as string}</span>
+                                                        <span className="text-yellow-500/80 uppercase">Prediction: {(partyClaims as any)[i].result}</span>
                                                     </>
                                                 )}
                                             </p>
@@ -491,7 +533,7 @@ export default function BetsPage() {
                     </div>
 
                     {/* Settlement Phase UI */}
-                    {((betInfo as any)?.[5] === 1 || (betInfo as any)?.[5] === "Locked") && (
+                    {((betInfo as any)?.[5] === 1 || (betInfo as any)?.[5] === "Locked" || allDeposited) && (
                         <div className="space-y-6 animate-in zoom-in-95 duration-500 mt-6">
                              {!(betInfo as any)?.[7] && (
                                  <div className="glass-card p-6 border-yellow-500/10 bg-yellow-500/[0.02]">
@@ -550,20 +592,49 @@ export default function BetsPage() {
                                                     <CheckCircle2 className="w-4 h-4 text-green-500" />
                                                     <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Verdict Reached</p>
                                                 </div>
-                                                <p className="text-sm font-bold text-white mb-3 leading-snug">
-                                                    {verdict.explanation || "AI has verified the outcome. Please review and execute the payout."}
+                                                <p className="text-sm font-bold text-white mb-4 leading-tight bg-white/5 p-4 rounded-xl border border-white/5">
+                                                    {verdict.explanation || "AI is verifying the results. If the event hasn't finished, please wait."}
                                                 </p>
-                                                <div className="flex items-center justify-between text-[10px] pt-3 border-t border-purple-500/10">
-                                                    <span className="text-gray-500 italic">Confidence Score: <span className="text-white uppercase font-black">{verdict.confidence || "Medium"}</span></span>
-                                                    <span className="text-purple-400 font-black uppercase">Winner: {verdict.outcome?.slice(0,6)}...{verdict.outcome?.slice(-4)}</span>
+                                                <div className="flex items-center justify-between text-[10px] pt-4 border-t border-purple-500/20">
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-gray-500 uppercase font-black tracking-tighter">Confidence</span>
+                                                        <span className="text-white font-black uppercase">{verdict.confidence || "Processing"}</span>
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 items-end">
+                                                        <span className="text-gray-500 uppercase font-black tracking-tighter">Winner Address</span>
+                                                        <span className="text-purple-400 font-black uppercase bg-purple-500/10 px-2 py-1 rounded-md border border-purple-500/20">
+                                                            {verdict.outcome ? `${verdict.outcome.slice(0,8)}...${verdict.outcome.slice(-6)}` : "VERIFYING..."}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <button 
-                                                onClick={handleResolve}
-                                                className="w-full py-5 bg-white text-black rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-yellow-500 transition-all shadow-xl"
-                                            >
-                                                Execute On-Chain Payout
-                                            </button>
+                                            {(isArbiter || isWinner) && (
+                                                <div className="space-y-3">
+                                                    <button 
+                                                        onClick={handleResolve}
+                                                        className="w-full py-5 bg-white text-black rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-yellow-500 transition-all shadow-xl flex items-center justify-center gap-2"
+                                                    >
+                                                        {isArbiter && <ShieldCheck className="w-4 h-4 text-orange-500" />}
+                                                        Execute On-Chain Payout
+                                                    </button>
+                                                    {((betInfo as any)?.[5] === 0 || (betInfo as any)?.[5] === "Open") && (
+                                                        <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl flex items-start gap-3">
+                                                            <AlertCircle className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+                                                            <div>
+                                                                <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Contract State Warning</p>
+                                                                <p className="text-[9px] text-orange-200/70 leading-tight mt-1">
+                                                                    The contract is stuck in "Waiting" mode. If you are the Arbiter, you can still attempt to resolve, but the blockchain may revert with "Not Locked".
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {!isArbiter && !isWinner && (
+                                                <div className="p-4 bg-white/5 rounded-xl text-center">
+                                                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest">Awaiting Payout by Winner</p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

@@ -1,4 +1,4 @@
-export const ESCROW_ADDRESS = "0x6811fCE3dEf0F8cdd2fF1f4330F064cBbdaFb0Be";
+export const ESCROW_ADDRESS = "0xE5e79E8c23425ec0e4AddFD237E44B074dFD842B";
 
 export const ESCROW_ABI = [
   {
@@ -33,6 +33,16 @@ export const ESCROW_ABI = [
       { "internalType": "address", "name": "winner", "type": "address" }
     ],
     "name": "resolveBet",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "betId", "type": "bytes32" },
+      { "internalType": "address", "name": "winner", "type": "address" }
+    ],
+    "name": "arbiterResolve",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -101,6 +111,13 @@ export const ESCROW_ABI = [
     ],
     "name": "BetCreated",
     "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "arbiter",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
   }
 ] as const;
 
