@@ -11,7 +11,7 @@ import {
   Copy,
   Check
 } from "lucide-react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useReadContracts, useWatchContractEvent } from "wagmi";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useReadContracts, useWatchContractEvent, usePublicClient } from "wagmi";
 import { parseEther, formatEther, decodeEventLog } from "viem";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -36,6 +36,7 @@ interface AiVerdict {
 
 export default function BetsPage() {
   const { address } = useAccount();
+  const publicClient = usePublicClient();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [step, setStep] = useState<"home" | "create" | "active">("home");
@@ -134,6 +135,16 @@ export default function BetsPage() {
     query: { enabled: !!contractParties && !!activeBetId }
   } as any);
 
+  const { data: partyClaims } = useReadContracts({
+    contracts: (contractParties || []).map((pAddr: any) => ({
+      address: ESCROW_ADDRESS as `0x${string}`,
+      abi: ESCROW_ABI,
+      functionName: "getPartyClaim",
+      args: activeBetId ? [activeBetId as `0x${string}`, pAddr] : undefined,
+    })),
+    query: { enabled: !!contractParties && !!activeBetId }
+  } as any);
+
   // Handle Redirection and Deep Linking
   useEffect(() => {
     const id = searchParams.get("id");
@@ -193,16 +204,6 @@ export default function BetsPage() {
     });
   };
 
-  const handleVote = async (winner: `0x${string}`) => {
-    if (!activeBetId) return;
-    writeContract({
-      address: ESCROW_ADDRESS as `0x${string}`,
-      abi: ESCROW_ABI,
-      functionName: "confirmWinner",
-      args: [activeBetId as `0x${string}`, winner],
-    });
-  };
-
   const handleResolve = async () => {
     if (!activeBetId || !verdict?.outcome) return;
     writeContract({
@@ -213,12 +214,42 @@ export default function BetsPage() {
     });
   };
 
-  // ... (Rest of UI components follow standard WhoPays aesthetics)
-  // I will truncate here for brevity but ensure the file is complete.
+  const startAiJudging = async () => {
+    if (!activeBetId || !betInfo || !publicClient) return;
+    setIsResolving(true);
+    try {
+      const partiesWithClaims = await Promise.all((contractParties || []).map(async (addr: any) => {
+        const claim = await publicClient.readContract({
+           address: ESCROW_ADDRESS as `0x${string}`,
+           abi: ESCROW_ABI,
+           functionName: "getPartyClaim",
+           args: [activeBetId as `0x${string}`, addr]
+        }) as string;
+        return { address: addr, claim };
+      }));
+
+      const res = await fetch("/api/resolve-bet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          betId: activeBetId,
+          title: (betInfo as any)[1],
+          description: (betInfo as any)[2],
+          parties: partiesWithClaims,
+          isUniversal: (betInfo as any)[7]
+        })
+      });
+      const data = await res.json();
+      setVerdict(data);
+    } catch (e) {
+      toast.error("AI Judge is currently offline.");
+    } finally {
+      setIsResolving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-yellow-500/30 selection:text-yellow-200 font-sans">
-        {/* UI Implementation */}
         <div className="max-w-xl mx-auto px-6 py-12">
             {step === "home" && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -404,16 +435,6 @@ export default function BetsPage() {
                                 <span className="text-[10px] font-black uppercase tracking-widest">Copy</span>
                             </button>
                         </div>
-                        
-                        <div className="mt-4 p-4 bg-yellow-500/5 rounded-2xl border border-yellow-500/10 flex items-center gap-4">
-                             <div className="bg-white p-2 rounded-xl">
-                                <QRCodeSVG value={typeof window !== 'undefined' ? window.location.href : ""} size={60} />
-                             </div>
-                             <div>
-                                <p className="text-xs font-bold text-yellow-500">Scan to Join</p>
-                                <p className="text-[10px] text-gray-500 max-w-[150px]">Show this to your friend to let them stake in person.</p>
-                             </div>
-                        </div>
                     </div>
 
                     <div className="space-y-3">
@@ -435,8 +456,14 @@ export default function BetsPage() {
                                         </div>
                                         <div>
                                             <p className="text-xs font-bold text-white/90">{pAddr.slice(0, 6)}...{pAddr.slice(-4)}</p>
-                                            <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">
+                                            <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1">
                                                 {isMe ? "You" : "Party"} • {hasPaid ? "Staked" : "Waiting"}
+                                                {partyClaims?.[i]?.result && (
+                                                    <>
+                                                        <span className="opacity-30">•</span>
+                                                        <span className="text-yellow-500/80">Prediction: {partyClaims[i].result as string}</span>
+                                                    </>
+                                                )}
                                             </p>
                                         </div>
                                     </div>
@@ -462,6 +489,80 @@ export default function BetsPage() {
                         })
                     )}
                     </div>
+
+                    {/* Settlement Phase UI */}
+                    {((betInfo as any)?.[5] === 1 || (betInfo as any)?.[5] === "Locked") && (
+                        <div className="space-y-6 animate-in zoom-in-95 duration-500 mt-6">
+                             {!(betInfo as any)?.[7] && (
+                                 <div className="glass-card p-6 border-yellow-500/10 bg-yellow-500/[0.02]">
+                                    <div className="flex items-center gap-2 mb-4 text-yellow-500">
+                                        <Trophy className="w-4 h-4" />
+                                        <h3 className="text-xs font-black uppercase tracking-widest">Settle Winner</h3>
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 mb-4 uppercase font-bold">Cast your vote for the winner. Consensus releases the pot.</p>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {(contractParties || []).map((pAddr: any) => (
+                                            <button 
+                                                key={pAddr}
+                                                onClick={() => handleVote(pAddr)}
+                                                className="w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold transition-all border border-white/5 flex items-center justify-between px-4"
+                                            >
+                                                <span>{pAddr.slice(0, 10)}...{pAddr.slice(-6)}</span>
+                                                <div className="px-2 py-1 bg-yellow-500/10 text-yellow-500 text-[8px] font-black uppercase rounded-md">Vote for them</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                 </div>
+                             )}
+
+                             {(betInfo as any)?.[7] && (
+                                <div className="glass-card p-6 border-purple-500/20 bg-purple-500/[0.02]">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-2 text-purple-400">
+                                            <BrainCircuit className="w-4 h-4" />
+                                            <h3 className="text-xs font-black uppercase tracking-widest">WhoPays AI Judge</h3>
+                                        </div>
+                                        <div className="px-2 py-1 bg-purple-500/20 text-purple-400 text-[8px] font-black uppercase rounded-md tracking-tighter">Autonomous Verdict</div>
+                                    </div>
+                                    
+                                    <div className="mb-6 p-4 bg-white/5 rounded-xl border border-white/5">
+                                        <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-2">Escrow Logic</p>
+                                        <p className="text-[10px] text-gray-300 leading-tight">The AI Agent will browse the internet to verify if the event has occurred and determine the winner based on participant claims.</p>
+                                    </div>
+                                    
+                                    {!verdict ? (
+                                        <button 
+                                            onClick={startAiJudging}
+                                            disabled={isResolving}
+                                            className="w-full py-5 bg-purple-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-[0_0_30px_rgba(147,51,234,0.4)] hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                                        >
+                                            {isResolving ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify Result & Payout"}
+                                        </button>
+                                    ) : (
+                                        <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                            <div className="p-5 bg-purple-600/10 border border-purple-500/30 rounded-2xl">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                                    <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Verdict Reached</p>
+                                                </div>
+                                                <p className="text-sm font-bold text-white mb-3 leading-snug">{verdict.explanation}</p>
+                                                <div className="flex items-center justify-between text-[10px] pt-3 border-t border-purple-500/10">
+                                                    <span className="text-gray-500">Confidence: {verdict.confidence}</span>
+                                                    <span className="text-purple-400 font-black uppercase">Winner: {verdict.outcome?.slice(0,6)}...{verdict.outcome?.slice(-4)}</span>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={handleResolve}
+                                                className="w-full py-5 bg-white text-black rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-yellow-500 transition-all shadow-xl"
+                                            >
+                                                Execute On-Chain Payout
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                             )}
+                        </div>
+                    )}
                 </div>
             )}
         </div>
