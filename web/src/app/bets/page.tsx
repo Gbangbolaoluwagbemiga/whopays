@@ -8,7 +8,7 @@ import {
   ExternalLink,
   ShieldCheck
 } from "lucide-react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useReadContracts } from "wagmi";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useReadContracts, useWatchContractEvent } from "wagmi";
 import { parseEther, formatEther } from "viem";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -59,6 +59,22 @@ export default function BetsPage() {
   const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
   const { isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash });
 
+  // Watch for Bet Creation event to get the new ID
+  useWatchContractEvent({
+    address: ESCROW_ADDRESS as `0x${string}`,
+    abi: ESCROW_ABI,
+    eventName: "BetCreated",
+    onLogs(logs: any) {
+      const log = logs[0];
+      if (log && log.args.creator.toLowerCase() === address?.toLowerCase()) {
+        const newBetId = log.args.betId;
+        setActiveBetId(newBetId);
+        setStep("active");
+        router.push(`/bets?id=${newBetId}`);
+      }
+    },
+  });
+
   // 1. Fetch Bet Data from Contract
   const { data: betInfo, refetch: refetchBet } = useReadContract({
     address: ESCROW_ADDRESS as `0x${string}`,
@@ -103,7 +119,15 @@ export default function BetsPage() {
   }, [isTxSuccess]);
 
   const handleCreateBet = async () => {
-    if (!title || parties.length < 2) return;
+    if (!title) {
+        alert("Please enter a bet title.");
+        return;
+    }
+    if (parties.length < 2) {
+        alert("Please add at least one friend to the bet.");
+        return;
+    }
+    
     writeContract({
       address: ESCROW_ADDRESS as `0x${string}`,
       abi: ESCROW_ABI,
@@ -208,26 +232,6 @@ export default function BetsPage() {
                         </div>
 
                         <div className="glass-card p-6 border-white/5">
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-3">Stake & Asset</label>
-                            <div className="flex gap-3">
-                                <div className="w-32">
-                                    <select 
-                                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-sm outline-none cursor-pointer"
-                                        onChange={(e) => setSelectedToken(SUPPORTED_TOKENS.find(t => t.symbol === e.target.value) || SUPPORTED_TOKENS[0])}
-                                    >
-                                        {SUPPORTED_TOKENS.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
-                                    </select>
-                                </div>
-                                <input 
-                                    type="number" 
-                                    value={stake} 
-                                    onChange={(e) => setStake(e.target.value)} 
-                                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm outline-none focus:border-yellow-500"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="glass-card p-6 border-white/5">
                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-3">Category</label>
                             <div className="flex gap-2">
                                 <button 
@@ -253,6 +257,67 @@ export default function BetsPage() {
                                     />
                                 </div>
                             )}
+                        </div>
+
+                        <div className="glass-card p-6 border-white/5">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-3">Stake & Asset</label>
+                            <div className="flex gap-3">
+                                <div className="w-32">
+                                    <select 
+                                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-sm outline-none cursor-pointer"
+                                        onChange={(e) => setSelectedToken(SUPPORTED_TOKENS.find(t => t.symbol === e.target.value) || SUPPORTED_TOKENS[0])}
+                                    >
+                                        {SUPPORTED_TOKENS.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
+                                    </select>
+                                </div>
+                                <input 
+                                    type="number" 
+                                    value={stake} 
+                                    onChange={(e) => setStake(e.target.value)} 
+                                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm outline-none focus:border-yellow-500"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="glass-card p-6 border-white/5">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-3">Add Participants</label>
+                            <div className="flex gap-2 mb-4">
+                                <input 
+                                    value={newPartyAddr} 
+                                    onChange={(e) => setNewPartyAddr(e.target.value)} 
+                                    placeholder="Friend's Celo Address (0x...)"
+                                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm outline-none focus:border-yellow-500"
+                                />
+                                <button 
+                                    onClick={() => {
+                                        if (newPartyAddr.startsWith("0x") && newPartyAddr.length === 42) {
+                                            setParties([...parties, { name: "Friend", address: newPartyAddr as `0x${string}` }]);
+                                            setNewPartyAddr("");
+                                        }
+                                    }}
+                                    className="w-14 h-14 bg-white/10 hover:bg-white/20 rounded-2xl flex items-center justify-center transition-all"
+                                >
+                                    <Plus className="w-6 h-6" />
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-2">
+                                {parties.map((p, i) => (
+                                    <div key={i} className="flex items-center justify-between bg-white/5 px-4 py-3 rounded-xl border border-white/5">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-6 h-6 bg-yellow-500/20 text-yellow-500 rounded-lg flex items-center justify-center text-[8px] font-black">
+                                                {i + 1}
+                                            </div>
+                                            <span className="text-xs font-bold font-mono opacity-80">{p.address.slice(0, 10)}...{p.address.slice(-6)}</span>
+                                        </div>
+                                        {i > 0 && (
+                                            <button onClick={() => setParties(parties.filter((_, idx) => idx !== i))}>
+                                                <X className="w-4 h-4 text-gray-500 hover:text-red-500 transition-colors" />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         <button 
@@ -307,12 +372,20 @@ export default function BetsPage() {
                                         </div>
                                     </div>
                                     {isMe && !hasPaid && (
-                                        <button 
-                                            onClick={handleJoinBet}
-                                            className="px-4 py-2 bg-yellow-500 text-black text-[10px] font-black uppercase tracking-widest rounded-xl hover:scale-105 active:scale-95 transition-all"
-                                        >
-                                            Stake Now
-                                        </button>
+                                        <div className="flex flex-col gap-2">
+                                            <input 
+                                                value={userClaim}
+                                                onChange={(e) => setUserClaim(e.target.value)}
+                                                placeholder="Your Claim/Prediction"
+                                                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] outline-none focus:border-yellow-500"
+                                            />
+                                            <button 
+                                                onClick={handleJoinBet}
+                                                className="px-4 py-2 bg-yellow-500 text-black text-[10px] font-black uppercase tracking-widest rounded-xl hover:scale-105 active:scale-95 transition-all"
+                                            >
+                                                Stake Now
+                                            </button>
+                                        </div>
                                     )}
                                     {hasPaid && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                                 </div>

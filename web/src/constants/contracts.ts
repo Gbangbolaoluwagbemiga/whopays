@@ -89,6 +89,18 @@ export const ESCROW_ABI = [
     "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "bytes32", "name": "betId", "type": "bytes32" },
+      { "indexed": true, "internalType": "address", "name": "creator", "type": "address" },
+      { "indexed": false, "internalType": "string", "name": "title", "type": "string" },
+      { "indexed": false, "internalType": "uint256", "name": "stake", "type": "uint256" },
+      { "indexed": false, "internalType": "bool", "name": "isUniversal", "type": "bool" }
+    ],
+    "name": "BetCreated",
+    "type": "event"
   }
 ] as const;
 
