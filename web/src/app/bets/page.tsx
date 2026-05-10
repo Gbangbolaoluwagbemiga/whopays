@@ -9,11 +9,12 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useReadContracts, useWatchContractEvent } from "wagmi";
-import { parseEther, formatEther } from "viem";
+import { parseEther, formatEther, decodeEventLog } from "viem";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { ESCROW_ADDRESS, ESCROW_ABI, SUPPORTED_TOKENS, TOKEN_ABI } from "@/constants/contracts";
 import { supabase } from "@/lib/supabase";
+import { toast } from "react-hot-toast";
 
 type BetStatus = "setup" | "waiting" | "locked" | "resolved" | "cancelled";
 
@@ -57,9 +58,37 @@ export default function BetsPage() {
   const [betType, setBetType] = useState<"local" | "universal">("local");
 
   const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
-  const { isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash });
+  const { data: receipt, isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash });
 
-  // Watch for Bet Creation event to get the new ID
+  // 1. Listen for successful creation via receipt logs (More reliable than passive watch)
+  useEffect(() => {
+    if (isTxSuccess && receipt) {
+      toast.success("Transaction confirmed on Celo Mainnet! 🎉");
+      // Find the BetCreated event in logs
+      for (const log of receipt.logs) {
+        try {
+          const event = decodeEventLog({
+            abi: ESCROW_ABI,
+            data: log.data,
+            topics: log.topics,
+          });
+
+          if (event.eventName === "BetCreated") {
+            const newBetId = (event.args as any).betId;
+            setActiveBetId(newBetId);
+            setStep("active");
+            router.push(`/bets?id=${newBetId}`);
+            break;
+          }
+        } catch (e) {
+          // Skip logs that don't match the ABI
+          continue;
+        }
+      }
+    }
+  }, [isTxSuccess, receipt]);
+
+  // Keep passive watch as a fallback for external joins
   useWatchContractEvent({
     address: ESCROW_ADDRESS as `0x${string}`,
     abi: ESCROW_ABI,
@@ -120,14 +149,15 @@ export default function BetsPage() {
 
   const handleCreateBet = async () => {
     if (!title) {
-        alert("Please enter a bet title.");
+        toast.error("Please enter a bet title.");
         return;
     }
     if (parties.length < 2) {
-        alert("Please add at least one friend to the bet.");
+        toast.error("Please add at least one friend to the bet.");
         return;
     }
     
+    toast.loading("Deploying escrow to Celo Mainnet...", { id: "tx-status" });
     writeContract({
       address: ESCROW_ADDRESS as `0x${string}`,
       abi: ESCROW_ABI,
@@ -143,6 +173,9 @@ export default function BetsPage() {
         userClaim || "General Outcome"
       ],
       value: selectedToken.symbol === "CELO" ? parseEther(stake) : 0n,
+    }, {
+      onSuccess: () => toast.success("Transaction signed! Waiting for confirmation...", { id: "tx-status" }),
+      onError: (err) => toast.error(`Transaction failed: ${err.message}`, { id: "tx-status" })
     });
   };
 

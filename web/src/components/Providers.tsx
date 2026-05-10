@@ -18,6 +18,7 @@ import {
 import { createConfig, WagmiProvider, http } from "wagmi";
 import { celo, celoSepolia } from "wagmi/chains";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
+import { Toaster } from "react-hot-toast";
 import "@rainbow-me/rainbowkit/styles.css";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "3fcc6b144964e578c772eccc661b369a";
@@ -77,6 +78,18 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider initialChain={celo} modalSize="compact">
           {children}
+          <Toaster 
+            position="bottom-right"
+            toastOptions={{
+              style: {
+                background: '#111',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.1)',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }
+            }}
+          />
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
