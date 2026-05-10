@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
-// Lazy init for build safety
 const getGroq = () => {
   if (!process.env.GROQ_API_KEY) return null;
   return new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -9,40 +8,37 @@ const getGroq = () => {
 
 export async function POST(req: NextRequest) {
   try {
-    const { betTitle, betDescription, query, context, chatHistory, betType, partiesCount } = await req.json();
+    const { title, description, parties, isUniversal } = await req.json();
 
-    if (!betTitle || !query) {
+    if (!title || !parties) {
       return NextResponse.json({ error: "Missing bet context" }, { status: 400 });
     }
 
-    // Logic for Threshold
-    const threshold = partiesCount >= 7 ? 0.75 : 1.0;
-    const isUniversal = betType === "universal";
-
-    const prompt = `You are an elite AI referee for WhoPays, a decentralized escrow platform. 
+    const prompt = `You are an elite AI referee for WhoPays, a decentralized escrow platform.
+Your job is to resolve a bet based on real-world facts and the participants' claims.
 
 BET CONTEXT:
-- Title: "${betTitle}"
-- Description: "${betDescription || "No description"}"
-- Type: ${isUniversal ? "UNIVERSAL (Public event - you can verify online)" : "LOCAL (Personal event - consensus required)"}
-- Participants: ${partiesCount}
-- Required Consensus: ${threshold * 100}% agreement
+- Title: "${title}"
+- Description: "${description || "No description"}"
+- Type: ${isUniversal ? "UNIVERSAL (Public event - you MUST verify online)" : "LOCAL (Personal event)"}
 
-CHAT HISTORY & VOTES:
-${(chatHistory || []).map((m: any) => `${m.role.toUpperCase()}: ${m.text}`).join("\n")}
+PARTICIPANTS & THEIR CLAIMS:
+${parties.map((p: any) => `- Address: ${p.address}\n  Claim: "${p.claim}"`).join("\n")}
 
 SECURITY PROTOCOL:
-1. IF UNIVERSAL: You can resolve based on your knowledge (sports, facts, crypto prices). If the event happened, set "resolved": true.
-2. IF LOCAL: You MUST see at least ${threshold * 100}% of participants voting for the SAME winner in the chat history (messages starting with [VOTE]).
-3. If the threshold is NOT met and it's a LOCAL bet, set "resolved": false and explain who still needs to vote.
-4. If a dispute exists (parties voting for different people), do not resolve. Ask them to talk it out.
+1. Browse your knowledge base for the actual result of the event described in the title/description.
+2. Compare the real-world result against each participant's "Claim".
+3. Identify which participant's claim matches the outcome.
+4. If it is a UNIVERSAL bet and the event has occurred, set "resolved": true.
+5. If the event has NOT occurred yet, set "resolved": false.
+6. The "outcome" field MUST be the Celo Wallet Address of the winner.
 
 Respond in this exact JSON format:
 {
   "resolved": true/false,
-  "outcome": "Clear winner name or description",
+  "outcome": "0x... (Winner's Celo Address)",
   "confidence": "high/medium/low",
-  "explanation": "Friendly expert commentary (2-3 sentences)",
+  "explanation": "Briefly state the result found online and why this address won (2 sentences).",
   "canDeclareWinner": true/false
 }`;
 
@@ -54,7 +50,7 @@ Respond in this exact JSON format:
     const completion = await groq.chat.completions.create({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
+      temperature: 0.1,
       max_tokens: 600,
     });
 
@@ -64,9 +60,9 @@ Respond in this exact JSON format:
     if (!jsonMatch) {
       return NextResponse.json({
         resolved: false,
-        outcome: "Awaiting consensus.",
+        outcome: null,
         confidence: "low",
-        explanation: "I'm monitoring the chat for agreement. Make sure everyone casts their vote! 🗳️",
+        explanation: "AI could not reach a definitive verdict. The event may not have happened yet.",
         canDeclareWinner: false,
       });
     }

@@ -536,7 +536,12 @@ export default function BetsPage() {
                                             disabled={isResolving}
                                             className="w-full py-5 bg-purple-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-[0_0_30px_rgba(147,51,234,0.4)] hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
                                         >
-                                            {isResolving ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify Result & Payout"}
+                                            {isResolving ? (
+                                                <>
+                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                    <span>AI is browsing the web...</span>
+                                                </>
+                                            ) : "Verify Result & Payout"}
                                         </button>
                                     ) : (
                                         <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
@@ -545,9 +550,11 @@ export default function BetsPage() {
                                                     <CheckCircle2 className="w-4 h-4 text-green-500" />
                                                     <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Verdict Reached</p>
                                                 </div>
-                                                <p className="text-sm font-bold text-white mb-3 leading-snug">{verdict.explanation}</p>
+                                                <p className="text-sm font-bold text-white mb-3 leading-snug">
+                                                    {verdict.explanation || "AI has verified the outcome. Please review and execute the payout."}
+                                                </p>
                                                 <div className="flex items-center justify-between text-[10px] pt-3 border-t border-purple-500/10">
-                                                    <span className="text-gray-500">Confidence: {verdict.confidence}</span>
+                                                    <span className="text-gray-500 italic">Confidence Score: <span className="text-white uppercase font-black">{verdict.confidence || "Medium"}</span></span>
                                                     <span className="text-purple-400 font-black uppercase">Winner: {verdict.outcome?.slice(0,6)}...{verdict.outcome?.slice(-4)}</span>
                                                 </div>
                                             </div>
