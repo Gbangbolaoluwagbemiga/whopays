@@ -6,7 +6,10 @@ import {
   ArrowLeft, Trophy, Users, Clock, Zap, CheckCircle2,
   BrainCircuit, Loader2, Plus, X, AlertCircle, Coins,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Share2,
+  Copy,
+  Check
 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useReadContracts, useWatchContractEvent } from "wagmi";
 import { parseEther, formatEther, decodeEventLog } from "viem";
@@ -384,11 +387,44 @@ export default function BetsPage() {
                         <p className="text-sm text-gray-400 font-medium leading-relaxed">
                             {betInfo ? (betInfo as any)[2] : ""}
                         </p>
+                        
+                        <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
+                            <div>
+                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Invite Link</p>
+                                <p className="text-xs font-mono opacity-40">{typeof window !== 'undefined' ? window.location.href.slice(0, 30) : ""}...</p>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    navigator.clipboard.writeText(window.location.href);
+                                    toast.success("Link copied to clipboard!");
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl transition-all"
+                            >
+                                <Copy className="w-4 h-4" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Copy</span>
+                            </button>
+                        </div>
+                        
+                        <div className="mt-4 p-4 bg-yellow-500/5 rounded-2xl border border-yellow-500/10 flex items-center gap-4">
+                             <div className="bg-white p-2 rounded-xl">
+                                <QRCodeSVG value={typeof window !== 'undefined' ? window.location.href : ""} size={60} />
+                             </div>
+                             <div>
+                                <p className="text-xs font-bold text-yellow-500">Scan to Join</p>
+                                <p className="text-[10px] text-gray-500 max-w-[150px]">Show this to your friend to let them stake in person.</p>
+                             </div>
+                        </div>
                     </div>
 
                     <div className="space-y-3">
-                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">Participants</p>
-                        {(contractParties || []).map((pAddr: any, i: number) => {
+                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">Participants ({contractParties?.length || 0})</p>
+                        {(!contractParties || contractParties.length === 0) ? (
+                            <div className="glass-card p-8 text-center border-dashed border-white/10">
+                                <Users className="w-8 h-8 text-gray-600 mx-auto mb-3" />
+                                <p className="text-xs text-gray-500">Retrieving participants from Celo...</p>
+                            </div>
+                        ) : (
+                            (contractParties as any[]).map((pAddr: any, i: number) => {
                             const isMe = address?.toLowerCase() === pAddr.toLowerCase();
                             const hasPaid = depositStatuses?.[i]?.result as boolean;
                             return (
