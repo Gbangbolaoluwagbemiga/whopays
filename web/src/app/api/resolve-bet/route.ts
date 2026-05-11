@@ -8,10 +8,13 @@ const getGroq = () => {
 
 export async function POST(req: NextRequest) {
   try {
-    const { title, description, parties, isUniversal } = await req.json();
+    const body = await req.json();
+    console.log("[AI Judge] Received request body:", JSON.stringify(body, null, 2));
+    const { title, description, parties, isUniversal } = body;
 
-    if (!title || !parties) {
-      return NextResponse.json({ error: "Missing bet context" }, { status: 400 });
+    if (!title || !parties || !Array.isArray(parties)) {
+      console.error("[AI Judge] Invalid request: missing title or parties array");
+      return NextResponse.json({ error: "Missing bet context or invalid parties list" }, { status: 400 });
     }
 
     const prompt = `You are a definitive AI Arbiter for WhoPays. Resolve this escrow challenge IMMEDIATELY based on verified facts.
@@ -40,9 +43,11 @@ REQUIRED JSON FORMAT:
 
     const groq = getGroq();
     if (!groq) {
+      console.error("[AI Judge] GROQ_API_KEY is missing in environment variables!");
       return NextResponse.json({ error: "Arbiter service unavailable." }, { status: 500 });
     }
 
+    console.log("[AI Judge] Sending prompt to Groq for bet:", title);
     const completion = await groq.chat.completions.create({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
       messages: [{ role: "system", content: "You are a factual, decisive AI escrow arbiter. Always provide a clear explanation and identify the winner's wallet address." }, { role: "user", content: prompt }],
@@ -51,6 +56,7 @@ REQUIRED JSON FORMAT:
     });
 
     const rawText = completion.choices[0]?.message?.content?.trim() || "";
+    console.log("[AI Judge] Received response from Groq. Raw length:", rawText.length);
     console.log("[AI Judge Raw Output]:", rawText);
     
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
@@ -65,10 +71,24 @@ REQUIRED JSON FORMAT:
       });
     }
 
-    const result = JSON.parse(jsonMatch[0]);
-    return NextResponse.json(result);
+    try {
+      const result = JSON.parse(jsonMatch[0]);
+      return NextResponse.json(result);
+    } catch (parseErr) {
+      console.error("[AI Judge] JSON Parse Error:", parseErr, "Raw Content:", rawText);
+      return NextResponse.json({
+        resolved: false,
+        outcome: null,
+        confidence: "low",
+        explanation: "The AI judge provided an invalid response format. Please try again.",
+        canDeclareWinner: false,
+      });
+    }
   } catch (err: any) {
     console.error("[Bet Resolver Error]", err);
-    return NextResponse.json({ error: "Bet resolver failed" }, { status: 500 });
+    return NextResponse.json({ 
+      error: `AI Arbiter Error: ${err.message || "Internal Failure"}`,
+      details: err.stack
+    }, { status: 500 });
   }
 }

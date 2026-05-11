@@ -52,6 +52,7 @@ export default function BetsPage() {
   const [newPartyAddr, setNewPartyAddr] = useState("");
   const [activeBetId, setActiveBetId] = useState<string | null>(null);
   const [userClaim, setUserClaim] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [aiQuery, setAiQuery] = useState("");
   const [isResolving, setIsResolving] = useState(false);
   const [verdict, setVerdict] = useState<AiVerdict | null>(null);
@@ -60,6 +61,7 @@ export default function BetsPage() {
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [selectedToken, setSelectedToken] = useState(SUPPORTED_TOKENS[0]);
   const [betType, setBetType] = useState<"local" | "universal">("local");
+  const [participantNames, setParticipantNames] = useState<Record<string, string>>({});
 
   const { writeContract, data: hash, isPending: isTxPending, error: writeError } = useWriteContract();
   const { data: receipt, isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash });
@@ -164,6 +166,27 @@ export default function BetsPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (contractParties && contractParties.length > 0) {
+        fetchParticipantNames();
+    }
+  }, [contractParties]);
+
+  const fetchParticipantNames = async () => {
+    const { data, error } = await supabase
+        .from("user_profiles")
+        .select("wallet_address, display_name")
+        .in("wallet_address", (contractParties as string[]).map(a => a.toLowerCase()));
+    
+    if (data) {
+        const mapping: Record<string, string> = {};
+        data.forEach((p: any) => {
+            mapping[p.wallet_address.toLowerCase()] = p.display_name;
+        });
+        setParticipantNames(mapping);
+    }
+  };
+
+  useEffect(() => {
     if (isTxSuccess) {
       refetchBet();
       refetchDeposits();
@@ -204,6 +227,16 @@ export default function BetsPage() {
 
   const handleJoinBet = async () => {
     if (!activeBetId) return;
+
+    if (displayName && address) {
+        await supabase.from("user_profiles").upsert({ 
+            wallet_address: address.toLowerCase(), 
+            display_name: displayName,
+            updated_at: new Date().toISOString()
+        });
+        fetchParticipantNames();
+    }
+
     writeContract({
       address: ESCROW_ADDRESS as `0x${string}`,
       abi: ESCROW_ABI,
@@ -259,13 +292,18 @@ export default function BetsPage() {
     setIsResolving(true);
     try {
       const partiesWithClaims = await Promise.all((contractParties || []).map(async (addr: any) => {
-        const claim = await publicClient.readContract({
-           address: ESCROW_ADDRESS as `0x${string}`,
-           abi: ESCROW_ABI,
-           functionName: "getPartyClaim",
-           args: [activeBetId as `0x${string}`, addr]
-        }) as string;
-        return { address: addr, claim };
+        try {
+          const claim = await publicClient.readContract({
+             address: ESCROW_ADDRESS as `0x${string}`,
+             abi: ESCROW_ABI,
+             functionName: "getPartyClaim",
+             args: [activeBetId as `0x${string}`, addr]
+          }) as string;
+          return { address: addr, claim: claim || "No claim provided" };
+        } catch (err) {
+          console.warn(`[AI Judge] Could not fetch claim for ${addr}:`, err);
+          return { address: addr, claim: "No claim provided" };
+        }
       }));
 
       const res = await fetch("/api/resolve-bet", {
@@ -273,16 +311,23 @@ export default function BetsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           betId: activeBetId,
-          title: (betInfo as any)[1],
-          description: (betInfo as any)[2],
+          title: (betInfo as any).title || (betInfo as any)[1],
+          description: (betInfo as any).description || (betInfo as any)[2],
           parties: partiesWithClaims,
-          isUniversal: (betInfo as any)[7]
+          isUniversal: (betInfo as any).isUniversal || (betInfo as any)[7]
         })
       });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "Server error (non-JSON)" }));
+        throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
+      }
+
       const data = await res.json();
       setVerdict(data);
-    } catch (e) {
-      toast.error("AI Judge is currently offline.");
+    } catch (e: any) {
+      console.error("[AI Judge Error]", e);
+      toast.error(`AI Judge is currently offline: ${e.message || "Unknown Error"}`);
     } finally {
       setIsResolving(false);
     }
@@ -293,6 +338,25 @@ export default function BetsPage() {
   return (
     <div className="min-h-screen bg-black text-white selection:bg-yellow-500/30 selection:text-yellow-200 font-sans">
         <div className="max-w-xl mx-auto px-6 py-12">
+            {/* Global Header / Home Routing */}
+            <div className="flex items-center justify-between mb-8 opacity-80 hover:opacity-100 transition-opacity">
+                <Link 
+                    href="/"
+                    className="flex items-center gap-2 group cursor-pointer"
+                >
+                    <div className="w-8 h-8 bg-white/5 group-hover:bg-yellow-500/10 rounded-lg flex items-center justify-center border border-white/10 group-hover:border-yellow-500/20 transition-all">
+                        <ArrowLeft className="w-4 h-4 group-hover:text-yellow-500 transition-colors" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] group-hover:text-yellow-500 transition-colors">Home</span>
+                </Link>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10">
+                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                        <span className="text-[8px] font-black uppercase tracking-widest opacity-50">Celo Mainnet</span>
+                    </div>
+                </div>
+            </div>
+
             {step === "home" && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
                     <div className="flex items-center gap-3">
@@ -444,14 +508,27 @@ export default function BetsPage() {
                 <div className="space-y-8 animate-in fade-in duration-500">
                     <div className="glass-card p-8 relative overflow-hidden border-yellow-500/20 shadow-[0_0_50px_rgba(234,179,8,0.1)]">
                         <div className="flex justify-between items-start mb-6">
-                            <div className="px-3 py-1 bg-yellow-500 text-black text-[8px] font-black uppercase tracking-widest rounded-full">
-                                {betInfo ? (betInfo as any)[5] === 1 ? "Locked" : "Waiting" : "Loading"}
+                            <div className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest rounded-full ${
+                                betInfo ? 
+                                (betInfo as any)[5] === 2 ? "bg-green-500 text-black" : 
+                                (betInfo as any)[5] === 1 ? "bg-yellow-500 text-black" : 
+                                (betInfo as any)[5] === 3 ? "bg-red-500 text-white" :
+                                "bg-blue-500 text-white" : "bg-gray-500 text-white"
+                            }`}>
+                                {betInfo ? 
+                                    (betInfo as any)[5] === 2 ? "Settled" : 
+                                    (betInfo as any)[5] === 1 ? "Locked" : 
+                                    (betInfo as any)[5] === 3 ? "Cancelled" :
+                                    "Waiting" : "Loading"}
                             </div>
                             <div className="text-right">
                                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Total Pot</p>
                                 <p className="text-2xl font-black italic tracking-tighter text-yellow-500">
-                                    {betInfo ? formatEther((betInfo as any)[3] * BigInt((betInfo as any)[4])) : "0.00"} CELO
+                                    {(betInfo as any)?.[5] === 2 ? "0.00" : (betInfo ? formatEther((betInfo as any)[3] * BigInt((betInfo as any)[4])) : "0.00")} CELO
                                 </p>
+                                {(betInfo as any)?.[5] === 2 && (
+                                    <p className="text-[8px] font-black text-green-500 uppercase tracking-widest mt-1">Funds Distributed</p>
+                                )}
                             </div>
                         </div>
                         <h2 className="text-3xl font-black italic tracking-tighter uppercase mb-2">
@@ -497,20 +574,34 @@ export default function BetsPage() {
                                             {pAddr.slice(2, 4).toUpperCase()}
                                         </div>
                                         <div>
-                                            <p className="text-xs font-bold text-white/90">{pAddr.slice(0, 6)}...{pAddr.slice(-4)}</p>
-                                            <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1">
-                                                {isMe ? "You" : "Party"} • {hasPaid ? "Staked" : "Waiting"}
+                                            <p className="text-xs font-bold text-white/90">
+                                                {participantNames[pAddr.toLowerCase()] || `${pAddr.slice(0, 6)}...${pAddr.slice(-4)}`}
+                                            </p>
+                                            <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest flex flex-col gap-1">
+                                                <span className="flex items-center gap-1">
+                                                    {isMe ? "You" : "Party"} • {
+                                                        (betInfo as any)?.[5] === 2 ? (hasPaid ? "Settled" : "Ended") : 
+                                                        (hasPaid ? "Staked" : "Waiting")
+                                                    }
+                                                </span>
                                                 {Boolean((partyClaims as any)?.[i]?.result) && (
-                                                    <>
-                                                        <span className="opacity-30">•</span>
-                                                        <span className="text-yellow-500/80 uppercase">Prediction: {(partyClaims as any)[i].result}</span>
-                                                    </>
+                                                    <span className="text-yellow-500 font-black text-[9px] bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20 w-fit">
+                                                        CLAIM: {(partyClaims as any)[i].result}
+                                                    </span>
                                                 )}
                                             </p>
                                         </div>
                                     </div>
-                                    {isMe && !hasPaid && (
+                                    {isMe && !hasPaid && (betInfo as any)?.[5] === 0 && !Boolean((partyClaims as any)?.[i]?.result) && (
                                         <div className="flex flex-col gap-2">
+                                            {!participantNames[address?.toLowerCase() || ""] && (
+                                                <input 
+                                                    value={displayName}
+                                                    onChange={(e) => setDisplayName(e.target.value)}
+                                                    placeholder="Your Name (Optional)"
+                                                    className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] outline-none focus:border-yellow-500"
+                                                />
+                                            )}
                                             <input 
                                                 value={userClaim}
                                                 onChange={(e) => setUserClaim(e.target.value)}
@@ -525,7 +616,8 @@ export default function BetsPage() {
                                             </button>
                                         </div>
                                     )}
-                                    {hasPaid && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                    {hasPaid && (betInfo as any)?.[5] !== 2 && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                    {(betInfo as any)?.[5] === 2 && (betInfo as any)[6].toLowerCase() === pAddr.toLowerCase() && <Trophy className="w-4 h-4 text-yellow-500" />}
                                 </div>
                             );
                         })
@@ -630,9 +722,20 @@ export default function BetsPage() {
                                                     )}
                                                 </div>
                                             )}
-                                            {!isArbiter && !isWinner && (
+                                            {!isArbiter && !isWinner && (betInfo as any)?.[5] !== 2 && (
                                                 <div className="p-4 bg-white/5 rounded-xl text-center">
                                                     <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest">Awaiting Payout by Winner</p>
+                                                </div>
+                                            )}
+                                            {(betInfo as any)?.[5] === 2 && (
+                                                <div className="p-6 bg-green-500/10 border border-green-500/30 rounded-2xl text-center">
+                                                    <Trophy className="w-8 h-8 text-green-500 mx-auto mb-3" />
+                                                    <h4 className="text-sm font-black uppercase text-green-500 mb-1">Bet Resolved</h4>
+                                                    <p className="text-[10px] text-gray-400 font-bold">The winner has claimed the pot. This escrow is now complete.</p>
+                                                    <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5">
+                                                        <p className="text-[8px] font-black text-gray-500 uppercase mb-1">Final Winner</p>
+                                                        <p className="text-xs font-mono text-green-400">{(betInfo as any)[6].slice(0, 20)}...</p>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
